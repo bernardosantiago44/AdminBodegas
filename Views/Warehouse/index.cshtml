@@ -1,0 +1,12 @@
+﻿@model List<AdminBodegas.Models.Coordinacion>
+
+@{
+    ViewData["Title"] = "Bodegas";
+}
+
+<div>
+    @foreach (var coord in Model)
+    {
+        <span> @coord.coordinacion </span>
+    }
+</div>
