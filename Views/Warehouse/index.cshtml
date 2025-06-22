@@ -3,10 +3,101 @@
 @{
     ViewData["Title"] = "Bodegas";
 }
+<link href="~/Dhtmlx/skins/web/dhtmlx.css" rel="stylesheet" />
 
-<div>
-    @foreach (var coord in Model)
+<ul class="nav nav-tabs mb-3">
+    @for (int i = 0; i < Model.Count; i++)
     {
-        <span> @coord.coordinacion </span>
+        <li class="nav-item">
+            <button class="nav-link @(i == 0 ? "active" : "")"
+                    onclick="createGrid(@i);populateGridWithData(@i)">
+                Coordinación @(@i + 1)
+            </button>
+        </li>
     }
+</ul>
+
+<div class="tab-content mt-3">
+    <div id="grid" style="height: 400px;"></div>
 </div>
+
+
+@section Scripts {
+    <script>
+        const allData = @Html.Raw(Json.Serialize(Model));
+        var grid;
+        var maxColumns;
+
+        function createGrid(index) {
+            if (grid) {
+                grid.destructor();
+            }
+            grid = new dhtmlXGridObject('grid');
+            grid.setImagePath("/Dhtmlx/skins/web/imgs/dhxgrid_web/");
+
+            var data = allData[index].bodegas;
+            maxColumns = Math.max(...data.map(bodega => bodega.visitas.length)); // Numero maximp de visitas en la bodega
+
+            // Acomodar columnas necesarias para la informacion
+            const headers = ["Bodega"];
+            const columnWidths = ["400"];
+            const columnAligns = ["left"];
+            const columnTypes = ["ro"];
+            const columnSorts = ["str"];
+            const colors = [""];
+            var highlight = false;
+
+            for (let v = 0; v < maxColumns; v++) {
+                headers.push("·Fecha visita<br>·Duración");
+                headers.push("·Kg actuales<br>·Tarea");
+
+                columnWidths.push("200","100");
+                columnAligns.push("center","center");
+                columnTypes.push("txt","ro");
+                columnSorts.push("str","str");
+
+                if (highlight) {
+                    colors.push("#f2f2f2", "#f2f2f2");
+                } else {
+                    colors.push("", "");
+                }
+                highlight = !highlight;
+            }
+
+            grid.setHeader(headers.join(","));
+            grid.setInitWidths(columnWidths.join(","));
+            grid.setColAlign(columnAligns.join(","));
+            grid.setColTypes(columnTypes.join(","));
+            grid.setColSorting(columnSorts.join(","));
+            grid.setColumnColor(colors.join(","));
+
+            grid.enableMultiline(true);
+
+            grid.init();
+        }
+
+        function populateGridWithData(index) {
+            var data = allData[index].bodegas;
+            grid.clearAll();
+
+            for (var i = 0; i < data.length; i++) {
+                let bodega = data[i];
+                let row = [`${bodega.bodega_c} - ${bodega.bodega_n}`];
+                const numeroVisitas = bodega.visitas.length
+                const completarColumnas = maxColumns - numeroVisitas;
+
+                for (const visita of bodega.visitas) {
+                    row.push(`${visita.fecha}\n${visita.duracion}`, `${visita.kilogramos}<br>${visita.actividad}`);
+                }
+
+                grid.addRow(grid.uid(), row);
+            }
+
+        }
+
+        document.addEventListener('DOMContentLoaded', _ => {
+            createGrid(0);
+            populateGridWithData(0);
+        });
+    </script>
+}
