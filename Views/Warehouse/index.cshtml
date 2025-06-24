@@ -4,14 +4,49 @@
     ViewData["Title"] = "Bodegas";
 }
 <link href="~/Dhtmlx/skins/web/dhtmlx.css" rel="stylesheet" />
+<style>
+    .nav-tabs {
+        border-radius: 0;
+        margin-right: 2px;
+        list-style: none; 
+        padding: 0;
+        margin: 0;
+        display: flex; 
+        gap: 5px;
+    }
 
-<ul class="nav nav-tabs mb-3">
+    .nav-tabs .nav-link:hover {
+        filter: brightness(0.95);
+    }
+
+    .nav-link {
+        background-color: #D9D9D9;
+        color: black;
+        border: none;
+        padding: 8px;
+    }
+
+    .active {
+        background-color: #D98E2E;
+        color: white;
+        border: none;
+    }
+
+</style>
+
+
+<ul class="nav-tabs" style="border-bottom: none;">
     @for (int i = 0; i < Model.Count; i++)
     {
         <li class="nav-item">
-            <button class="nav-link @(i == 0 ? "active" : "")"
-                    onclick="createGrid(@i);populateGridWithData(@i)">
-                Coordinación @(@i + 1)
+            <button class="nav-link"
+                    id="nav@(i)"
+                    onclick="
+                                selectButton(@i);
+                                createGrid(@i);
+                                populateGridWithData(@i);
+                                loadLocations(@i);">
+                @Model[i].coordinacion
             </button>
         </li>
     }
@@ -21,12 +56,46 @@
     <div id="grid" style="height: 400px;"></div>
 </div>
 
+<div id="mapContainer" style="width: 100%; height: 800px;"></div>
+
 
 @section Scripts {
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-core.js"></script>
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js"></script>
+    <link rel="stylesheet" href="https://js.api.here.com/v3/3.1/mapsjs-ui.css" />
+
+    
     <script>
         const allData = @Html.Raw(Json.Serialize(Model));
         var grid;
         var maxColumns;
+        let bodegaCoordenadas = {}; // Asociar id de fila con coordenada 
+
+        const here = new H.service.Platform({
+            apiKey: 'i6c5pX-hnCxkldOU17CZ2x9DyTI4HW3n0ZnGA78J1fo'
+        });
+        const defaultLayers = here.createDefaultLayers();
+        const map = new H.Map(
+            document.getElementById('mapContainer'),
+            defaultLayers.vector.normal.map,
+            {
+                zoom: 5,
+                center: { lat: 23.6435, lng: -102.5528 }
+            }
+        );
+        new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
+        const ui = H.ui.UI.createDefault(map, defaultLayers);
+        let markers = [];
+
+        function selectButton(index) {
+            Array.from(document.getElementsByClassName('nav-link')).forEach(element => {
+                element.className = "nav-link ";
+            });
+
+            document.getElementById(`nav${index}`).className += 'active';
+        }
 
         function createGrid(index) {
             if (grid) {
@@ -51,7 +120,7 @@
                 headers.push("·Fecha visita<br>·Duración");
                 headers.push("·Kg actuales<br>·Tarea");
 
-                columnWidths.push("200","100");
+                columnWidths.push("120","120");
                 columnAligns.push("center","center");
                 columnTypes.push("txt","ro");
                 columnSorts.push("str","str");
@@ -83,21 +152,75 @@
             for (var i = 0; i < data.length; i++) {
                 let bodega = data[i];
                 let row = [`${bodega.bodega_c} - ${bodega.bodega_n}`];
-                const numeroVisitas = bodega.visitas.length
-                const completarColumnas = maxColumns - numeroVisitas;
 
                 for (const visita of bodega.visitas) {
-                    row.push(`${visita.fecha}\n${visita.duracion}`, `${visita.kilogramos}<br>${visita.actividad}`);
+                    var rowVisitaFecha = `${visita.fecha}`;
+                    rowVisitaFecha += '<br>';
+                    rowVisitaFecha += `<span style="color: #00C0E7;">${visita.duracion}</span>`;
+
+                    var rowVisitaTarea = `${visita.kilogramos}`;
+                    rowVisitaTarea += `<br>`;
+                    rowVisitaTarea += `<span style="color: #00C0E7;">${visita.actividad}</span>`;
+
+                    row.push(rowVisitaFecha, rowVisitaTarea);
                 }
 
-                grid.addRow(grid.uid(), row);
-            }
+                let rowId = grid.uid();
 
+                grid.addRow(rowId, row);
+                bodegaCoordenadas[rowId] = {
+                    latitud: bodega.latitud,
+                    longitud: bodega.longitud,
+                    nombre: bodega.bodega_n
+                }
+            }
+            grid.attachEvent("onRowSelect", function(rowId, colIndex) {
+            const coordenada = bodegaCoordenadas[rowId];
+            if (coordenada) {
+                const point = new H.geo.Point(coordenada.latitud, coordenada.longitud);
+                map.setCenter(point, true);
+
+                const bubble = new H.ui.InfoBubble(point, {
+                    content: coordenada.nombre
+                });
+
+                ui.getBubbles().forEach(b => ui.removeBubble(b));
+                ui.addBubble(bubble);
+            }
+        });
+        }
+
+        function loadLocations(index) {
+            clearMap();
+            const bodegas = allData[index].bodegas;
+            bodegas.forEach(location => {
+                const position = new H.geo.Point(location.latitud, location.longitud);
+                const marker = new H.map.Marker(position);
+                marker.setData(location.bodega_n);
+                map.addObject(marker);
+                markers.push(marker);
+            });
+        }
+
+        function highlightMarker(index) {
+            map.setCenter(markers[index].geometry(), true);
+            const bubble = new H.ui.InfoBubble(markers[index].getGeometry(), {
+                content: markers[index].getData()
+            });
+            const ui = H.ui.UI.createDefault(map, defaultLayers);
+            ui.addBubble(bubble);
+        }
+
+        function clearMap() {
+            markers.forEach(marker => map.removeObject(marker));
+            markers = [];
         }
 
         document.addEventListener('DOMContentLoaded', _ => {
             createGrid(0);
             populateGridWithData(0);
+            selectButton(0);
+            loadLocations(0);
         });
     </script>
 }
